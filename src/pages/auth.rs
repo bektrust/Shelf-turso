@@ -71,6 +71,17 @@ pub async fn auth_page() -> Result<impl View> {
     })
 }
 
+/// Where an account that exists but is not switched on yet ends up. The login
+/// form sends users here, and so does the profile form once the letter is sent.
+#[page("/auth/pending")]
+pub async fn pending_page() -> Result<impl View> {
+    Ok(view! {
+        <h1>"Registration"</h1>
+        <p>"Пользователь добавлен в базу, но еще не активирован. Ждите. Об активации Вам сообщат по электронной почте."</p>
+        <p><a href="/auth">"Login"</a></p>
+    })
+}
+
 /// A handler that answers a `POST` sends the browser on with `see_other`, a
 /// `303`. The router's `redirect` would be a `307`, which repeats the `POST`
 /// at the new URL, while the page there serves `GET`; a `303` is followed by
@@ -79,22 +90,23 @@ pub async fn auth_page() -> Result<impl View> {
 pub async fn login(cx: &Cx, Form(input): Form<Credentials>) -> Result<()> {
     let db = app_context::<Db>(cx);
 
-    let verified = match find_user(db, &input.login).await {
-        Some((user_id, hash)) if verify_password(&hash, &input.password) => Some(user_id),
-        _ => None,
+    let account = match find_user(db, &input.login).await {
+        Some(account) if verify_password(&account.password_hash, &input.password) => account,
+        // Back to the form: no such login, or the password did not match.
+        _ => return Err(see_other("/auth").into()),
     };
 
-    let session = match verified {
-        Some(user_id) => create_session(db, user_id).await.ok(),
-        None => None,
-    };
+    // The login and the password are right, but the account is still switched
+    // off: activation happens in Turso, by hand.
+    if !account.enable {
+        return Err(see_other("/auth/pending").into());
+    }
 
-    match session {
+    match create_session(db, account.id).await.ok() {
         Some(sid) => {
             store_session(cx, sid);
             Err(see_other("/").into())
         }
-        // Back to the form: the login or the password did not match.
         None => Err(see_other("/auth").into()),
     }
 }
@@ -103,20 +115,22 @@ pub async fn login(cx: &Cx, Form(input): Form<Credentials>) -> Result<()> {
 pub async fn register(cx: &Cx, Form(input): Form<Credentials>) -> Result<()> {
     let db = app_context::<Db>(cx);
 
-    let session = match create_user(db, &input.login, &input.password).await {
-        Ok(user_id) => create_session(db, user_id).await.ok(),
-        // The login is taken, so the form comes back.
-        Err(_) => None,
+    let user_id = match create_user(db, &input.login, &input.password).await {
+        Ok(user_id) => user_id,
+        // The login is taken, so the form comes back. `#register` is the
+        // fragment the panel selector matches.
+        Err(_) => return Err(see_other("/auth#register").into()),
     };
 
-    match session {
+    // The session exists only so the profile form of the next step knows which
+    // account it belongs to; `save_profile` closes it again. The account is
+    // still switched off, so `/` keeps sending this user to the pending page.
+    match create_session(db, user_id).await.ok() {
         Some(sid) => {
             store_session(cx, sid);
-            Err(see_other("/").into())
+            Err(see_other("/auth/profile").into())
         }
-        // `#register` is the fragment the panel selector matches, so a failed
-        // registration returns to the form the user filled in.
-        None => Err(see_other("/auth#register").into()),
+        None => Err(see_other("/auth/pending").into()),
     }
 }
 
@@ -124,8 +138,13 @@ pub async fn register(cx: &Cx, Form(input): Form<Credentials>) -> Result<()> {
 pub async fn logout(cx: &Cx) -> Result<()> {
     let db = app_context::<Db>(cx);
 
-    if let Some(session_id) = cookies(cx).get("session_id") {
-        delete_session(db, session_id.value()).await;
+    // The value is copied out of the jar before the await, so no borrow of it
+    // has to live across one.
+    let session_id = cookies(cx)
+        .get("session_id")
+        .map(|id| id.value().to_owned());
+    if let Some(session_id) = session_id {
+        delete_session(db, &session_id).await;
     }
     // The removal has to carry the same `Path` the cookie was set with, or the
     // browser will not match it and the cookie stays.

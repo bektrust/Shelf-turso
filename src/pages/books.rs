@@ -1,9 +1,9 @@
-use crate::{auth::user_by_session, books::*, db::Db};
+use super::session_user;
+use crate::{books::*, db::Db};
 use serde::Deserialize;
 use topcoat::{
     Result,
     context::{Cx, app_context},
-    cookie::{Cookies, cookies},
     router::{
         content::Form,
         error::{redirect, see_other},
@@ -23,25 +23,25 @@ pub struct BookForm {
     finished: Option<String>,
 }
 
-/// The user the request's session cookie belongs to, if any.
-async fn session_user(cx: &Cx, db: &Db) -> Option<(i64, String)> {
-    let session_id = cookies(cx).get("session_id")?;
-    user_by_session(db, session_id.value()).await
-}
-
 #[page("/")]
 pub async fn index(cx: &Cx) -> Result<impl View> {
     let db = app_context::<Db>(cx);
 
-    let Some((_user_id, login)) = session_user(cx, db).await else {
+    let Some(user) = session_user(cx, db).await else {
         return Err(redirect("/auth").into());
     };
+
+    // Registered but not switched on yet: the same page the login form sends
+    // these users to.
+    if !user.enable {
+        return Err(redirect("/auth/pending").into());
+    }
 
     let books = all(db).await;
 
     Ok(view! {
         <h1>"Books"</h1>
-        <p>"Signed in as " (login) " — " <a href="/logout">"Logout"</a></p>
+        <p>"Signed in as " (user.login) " — " <a href="/logout">"Logout"</a></p>
 
         <form method="post" action="/books/create">
             <input name="title" placeholder="title">

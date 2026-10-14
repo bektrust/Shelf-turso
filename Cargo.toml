@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argon2 = "0.6.0"
 dotenvy = "0.15.7"
+lettre = { version = "0.11", features = ["builder", "hostname", "smtp-transport", "native-tls"] }
 libsql = "0.10.0"
 serde = { version = "1.0.229", features = ["derive"] }
 time = "0.3.55"

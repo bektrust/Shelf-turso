@@ -2,6 +2,7 @@ mod auth;
 mod books;
 mod db;
 mod layout;
+mod mail;
 mod pages;
 
 use db::Db;

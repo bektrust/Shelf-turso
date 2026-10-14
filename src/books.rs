@@ -29,11 +29,11 @@ pub async fn all(db: &Db) -> Vec<Book> {
     let mut items = Vec::new();
     while let Ok(Some(row)) = rows.next().await {
         items.push(Book {
-            id: row.get(0).unwrap_or(0),
+            id: number(&row, 0, 0),
             title: row.get(1).unwrap_or_default(),
             author: row.get(2).unwrap_or_default(),
-            year: row.get(3).unwrap_or_default(),
-            finished: row.get::<i64>(4).unwrap_or(0) != 0,
+            year: number(&row, 3, 0),
+            finished: number(&row, 4, 0) != 0,
         });
     }
     items
@@ -51,12 +51,28 @@ pub async fn find(db: &Db, id: i64) -> Option<Book> {
 
     let row = rows.next().await.ok()??;
     Some(Book {
-        id: row.get(0).ok()?,
+        id: number(&row, 0, 0),
         title: row.get(1).ok()?,
         author: row.get(2).ok()?,
-        year: row.get(3).ok()?,
-        finished: row.get::<i64>(4).ok()? != 0,
+        year: number(&row, 3, 0),
+        finished: number(&row, 4, 0) != 0,
     })
+}
+
+/// The integer at `index`, whatever the column happens to hold.
+///
+/// `row.get::<i64>` is not an option here: libsql answers a value that is not
+/// an integer with `unreachable!()`, which panics the worker thread instead of
+/// failing the query (`libsql-0.10.0/src/rows.rs:191`). A column declared
+/// `TEXT` stores numbers as text, so that panic is easy to reach from a table
+/// whose columns were typed by hand.
+fn number(row: &libsql::Row, index: i32, default: i64) -> i64 {
+    match row.get_value(index) {
+        Ok(libsql::Value::Integer(value)) => value,
+        Ok(libsql::Value::Real(value)) => value as i64,
+        Ok(libsql::Value::Text(text)) => text.trim().parse().unwrap_or(default),
+        _ => default,
+    }
 }
 
 pub async fn create(db: &Db, title: &str, author: &str, year: i64, finished: bool) {
