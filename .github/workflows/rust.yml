@@ -8,11 +8,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04, а не `ubuntu-latest`: тот же glibc, что у стека heroku-24.
+    # `ubuntu-latest` с 19 октября 2026 переезжает на Ubuntu 26, и бинарник,
+    # собранный там, на heroku-24 уже не запустится.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        # v5 работает на Node 24; v4 ещё держится, но GitHub выдаёт предупреждение.
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
