@@ -57,6 +57,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Драйвер docker-container умеет экспортировать кэш слоёв в хранилище
+      # GitHub Actions; со стандартным docker-драйвером это недоступно.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
       # Heroku принимает образы по адресу registry.heroku.com/<app>/<process>.
       # Пароль идёт через stdin, чтобы токен не оказался в списке аргументов.
       - name: Login to Heroku Container Registry
@@ -67,12 +72,16 @@ jobs:
       # Раннер уже x86_64, так что `--platform` здесь ничего не эмулирует.
       # `--provenance=false` — Heroku не понимает аттестации, которые buildx
       # по умолчанию прикладывает к образу.
+      # Кэш слоёв лежит в хранилище GitHub: слой зависимостей пересобирается
+      # только при изменении Cargo.toml/Cargo.lock, а не на каждый деплой.
       - name: Build and push image
         run: |
           docker buildx build \
             --platform linux/amd64 \
             --provenance=false \
             --progress=plain \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
             --push \
             --tag registry.heroku.com/shelf-turso/web \
             .
