@@ -1,6 +1,12 @@
 # Сборка идёт на Linux x86_64 — той же архитектуре, что у Heroku.
 # На GitHub-раннере это нативно: ни qemu, ни Rosetta не нужны.
-FROM --platform=linux/amd64 heroku/heroku:24 AS build
+# Платформу задаёт `docker buildx build --platform linux/amd64`, а не FROM:
+# постоянное значение в FROM BuildKit считает ошибкой стиля.
+FROM heroku/heroku:24 AS build
+
+# Образ Heroku по умолчанию запускается не от root, а apt-get без root
+# падает с "List directory /var/lib/apt/lists/partial is missing".
+USER root
 
 # Всё, без чего не собираются зависимости:
 #   libsql-ffi         -> cmake, clang/libclang (bindgen), cc (build-essential)
@@ -41,7 +47,10 @@ FROM scratch AS export
 COPY --from=build /app/target/release/TopcoatTurso /
 
 # Последняя стадия — то, что получается при обычном `docker build`.
-FROM --platform=linux/amd64 heroku/heroku:24 AS runtime
+FROM heroku/heroku:24 AS runtime
+
+# Тот же нюанс: apt-get требует root.
+USER root
 
 # Бинарник динамически линкуется с OpenSSL 3. В минимальном образе библиотеки
 # может не быть, и приложение упало бы на старте с "libssl.so.3: cannot open".

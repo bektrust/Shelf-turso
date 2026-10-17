@@ -72,6 +72,7 @@ jobs:
           docker buildx build \
             --platform linux/amd64 \
             --provenance=false \
+            --progress=plain \
             --push \
             --tag registry.heroku.com/shelf-turso/web \
             .
