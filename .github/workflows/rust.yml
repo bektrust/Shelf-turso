@@ -29,3 +29,18 @@ jobs:
 
       - name: Test
         run: cargo test --release
+
+      # Пишем в лог, что именно собралось: ELF под x86-64 и размер файла.
+      - name: Show binary
+        run: file target/release/TopcoatTurso && ls -lh target/release/TopcoatTurso
+
+      # Готовый бинарник появляется внизу страницы запуска: Actions → нужный
+      # run → раздел Artifacts. Живёт retention-days, потом GitHub его удаляет.
+      - name: Upload binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: TopcoatTurso-linux-x86_64
+          path: target/release/TopcoatTurso
+          # Если файла нет, лучше упасть, чем молча ничего не приложить.
+          if-no-files-found: error
+          retention-days: 14
