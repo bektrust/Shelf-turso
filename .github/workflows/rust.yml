@@ -44,3 +44,46 @@ jobs:
           # Если файла нет, лучше упасть, чем молча ничего не приложить.
           if-no-files-found: error
           retention-days: 14
+
+  # Деплой в Heroku Container Registry. Отдельная job, а не шаг внутри `build`:
+  # на pull request она не нужна вовсе, а на push её падение видно отдельно от
+  # зелёной сборки.
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      # Heroku принимает образы по адресу registry.heroku.com/<app>/<process>.
+      # Пароль идёт через stdin, чтобы токен не оказался в списке аргументов.
+      - name: Login to Heroku Container Registry
+        run: echo "$HEROKU_API_KEY" | docker login --username=_ --password-stdin registry.heroku.com
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
+      # Раннер уже x86_64, так что `--platform` здесь ничего не эмулирует.
+      # `--provenance=false` — Heroku не понимает аттестации, которые buildx
+      # по умолчанию прикладывает к образу.
+      - name: Build and push image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --push \
+            --tag registry.heroku.com/shelf-turso/web \
+            .
+
+      - name: Install Heroku CLI
+        run: curl -fsSL https://cli-assets.heroku.com/install.sh | sh
+
+      # Release превращает загруженный образ в запущенный процесс.
+      # scale — на случай свежего приложения, где web ещё не масштабирован.
+      - name: Release the image
+        run: |
+          heroku container:release web -a shelf-turso
+          heroku ps:scale web=1 -a shelf-turso
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
