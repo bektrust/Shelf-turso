@@ -70,10 +70,10 @@ jobs:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
       # Раннер уже x86_64, так что `--platform` здесь ничего не эмулирует.
-      # `--provenance=false` — Heroku не понимает аттестации, которые buildx
-      # по умолчанию прикладывает к образу.
       # Кэш слоёв лежит в хранилище GitHub: слой зависимостей пересобирается
       # только при изменении Cargo.toml/Cargo.lock, а не на каждый деплой.
+      # `oci-mediatypes=false` — Heroku принимает только Docker-манифесты
+      # и отвечает `unsupported` на OCI, который buildx теперь пишет по умолчанию.
       - name: Build and push image
         run: |
           docker buildx build \
@@ -82,7 +82,7 @@ jobs:
             --progress=plain \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --push \
+            --output type=image,push=true,oci-mediatypes=false \
             --tag registry.heroku.com/shelf-turso/web \
             .
 
